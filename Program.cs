@@ -35,20 +35,26 @@ foreach(var line in lines)
 
 var writer = new FileStream("binary.bin", FileMode.Create, FileAccess.ReadWrite);
 
-var buffer = new byte[10];
+var buffer = new byte[MySerializer.ByteSize];
+var lineCount = 0;
 
 foreach(var item in list)
 {
-    ToBinaryData(item, buffer);
+    MySerializer.Serialize(item, lineCount, buffer);
     writer.Write(buffer, 0, buffer.Length);
+    lineCount++;
 }
 
 Console.WriteLine("converted");
 writer.Dispose();
 
 using var reader = new FileStream("binary.bin", FileMode.Open, FileAccess.Read);
+using var writer2 = new StreamWriter("restored.csv");
+writer2.WriteLine("Year,Month,Day,Hour,Temperature,Humidity");
 int bytesToRead;
-var infos = new List<Information>();
+var bufferInfo = new Information();
+// var infos = new List<Information>();
+lineCount = 0;
 
 do
 {
@@ -56,17 +62,22 @@ do
 
     if (bytesToRead >= buffer.Length)
     {
-        var bufferInfo = new Information();
+        try
+        {
+            MySerializer.Deserialize(buffer, lineCount, bufferInfo);
+            writer2.WriteLine(ToCsvTextLine(bufferInfo));
 
-        ToInformation(buffer, bufferInfo);
+            lineCount++;
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine(e.Message);
+        }
 
-        infos.Add(bufferInfo);
     }
 
 } while(bytesToRead >= buffer.Length);
 
-var output = infos.Select(info => ToCsvTextLine(info)).Prepend("Year,Month,Day,Hour,Temperature,Humidity");
-File.WriteAllLines("restored.csv", output);
 
 Console.WriteLine("restored");
 
@@ -125,42 +136,6 @@ static string ToCsvTextLine(Information info)
     text = $"{info.Year},{info.Month},{info.Day},{info.Hour},{info.Temperature:.#},{info.Humidity}";
 
     return text;
-}
-
-
-static void ToBinaryData(Information info, byte[] output)
-{
-    if (10 > output.Length) return;
-
-    var u2_year = (ushort)info.Year;
-    var u1_month = (byte)info.Month;
-    var u1_day = (byte)info.Day;
-    var u1_hour = (byte)info.Hour;
-    var u4_temperature = BitConverter.SingleToInt32Bits((float)info.Temperature);
-    var u1_humidity = (byte)info.Humidity;
-
-    output[0] = (byte)(u2_year >> 8);
-    output[1] = (byte)(u2_year & 0xFF);
-    output[2] = u1_month;
-    output[3] = u1_day;
-    output[4] = u1_hour;
-    output[5] = (byte)(u4_temperature >> 24);
-    output[6] = (byte)((u4_temperature >> 16) & 0xFF);
-    output[7] = (byte)((u4_temperature >> 8) & 0xFF);
-    output[8] = (byte)(u4_temperature & 0xFF);
-    output[9] = u1_humidity;
-}
-
-static void ToInformation(byte[] input, Information info)
-{
-    if (10 > input.Length) return;
-
-    info.Year = (input[0] << 8) | input[1];
-    info.Month = input[2];
-    info.Day = input[3];
-    info.Hour = input[4];
-    info.Temperature = BitConverter.Int32BitsToSingle((input[5] << 24) | (input[6] << 16) | (input[7] << 8) | input[8]);
-    info.Humidity = input[9];
 }
 
 public class Information
